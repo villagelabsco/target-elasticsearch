@@ -298,7 +298,6 @@ class ElasticSink(BatchSink):
         records = self.build_body(records)
         self.logger.debug(records)
         try:
-            logger.info("About to bulk insert: ", len(records))
             bulk(self.client, records)
         except elasticsearch.helpers.BulkIndexError as e:
             self.logger.error(e.errors)
