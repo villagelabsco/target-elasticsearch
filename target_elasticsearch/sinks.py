@@ -168,7 +168,8 @@ class ElasticSink(BatchSink):
                         } else {
                             for (entry in params.r.entrySet()) {
                                 if (!entry.getKey().equals('_sdc_sequence')) { // Skip _sdc_sequence field
-                                    ctx._source.put(entry.getKey(), entry.getValue());
+                                    ctx._source.put(
+                                        entry.getKey(), entry.getValue());
                                 }
                             }
                         }
