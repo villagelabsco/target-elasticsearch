@@ -13,6 +13,7 @@ from singer_sdk import PluginBase
 from singer_sdk.sinks import BatchSink
 
 import datetime
+import logging
 
 from target_elasticsearch.common import (
     INDEX_FORMAT,
@@ -121,6 +122,10 @@ class ElasticSink(BatchSink):
     ):
         super().__init__(target, stream_name, schema, key_properties)
         self.client = self._authenticated_client()
+        # Overload Elasticsearch's logging level
+        logging.getLogger('elastic_transport.transport').setLevel(logging.WARNING)
+        logging.getLogger('elasticsearch').setLevel(logging.WARNING)
+
 
     def build_request_body_and_distinct_indices(
         self, records: List[Dict[str, Union[str, Dict[str, str], int]]]
