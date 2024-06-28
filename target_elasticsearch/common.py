@@ -21,7 +21,7 @@ NAME = "target-elasticsearch"
 PREFERRED_PKEY = {
     "channel_members": ("member_id", "channel_id"),
     "messages": ("client_msg_id"),
-    "threads": ("client_msg_id")
+    "threads": ("client_msg_id"),
 }
 CHECK_DIFF = "check_diff"
 DIFF_SUFFIX = "-diff-events"
@@ -31,12 +31,20 @@ IGNORED_FIELDS = "ignored_fields"
 DEFAULT_IGNORED_FIELDS = [
     "createdAt",
     "updatedAt",
+    "created_time",
+    "last_edited_time",
     "_sdc_extracted_at",
     "_sdc_sequence",
     "_sdc_batched_at",
     "_sdc_received_at",
     "_sdc_sync_started_at",
 ]
+SPECIFIC_DIFF_PROCESS_CSV = "csv"
+SPECIFIC_DIFF_PROCESS_TEXT = "text"
+SPECIFIC_DIFF_PROCESS = "specific_diff_process"
+SPECIFIC_DIFF_PROCESS_DATA_FIELD = "specific_diff_process_data_field"
+SPECIFIC_DIFF_PROCESS_FILTER_FIELD = "specific_diff_process_filter_field"
+SPECIFIC_DIFF_PROCESS_FILTER_VALUE = "specific_diff_process_filter_value"
 
 
 def to_daily(date) -> str:

@@ -4,13 +4,21 @@ import jinja2
 from typing import List, Dict, Optional, Union, Any, Tuple, Set
 
 import re
+import io
 import concurrent
 import jsonpath_ng
 import singer_sdk.io_base
+import pydash
+import difflib
+import pandas as pd
+import numpy as np
 from elasticsearch.helpers import bulk
 from elasticsearch.exceptions import NotFoundError
 from singer_sdk import PluginBase
 from singer_sdk.sinks import BatchSink
+from difflib import SequenceMatcher
+from itertools import zip_longest
+from functools import lru_cache
 
 import datetime
 import logging
@@ -39,6 +47,12 @@ from target_elasticsearch.common import (
     EVENT_TIME_KEY,
     IGNORED_FIELDS,
     DEFAULT_IGNORED_FIELDS,
+    SPECIFIC_DIFF_PROCESS_CSV,
+    SPECIFIC_DIFF_PROCESS_TEXT,
+    SPECIFIC_DIFF_PROCESS,
+    SPECIFIC_DIFF_PROCESS_DATA_FIELD,
+    SPECIFIC_DIFF_PROCESS_FILTER_FIELD,
+    SPECIFIC_DIFF_PROCESS_FILTER_VALUE,
     DIFF_SUFFIX,
     to_daily,
     to_monthly,
@@ -144,6 +158,8 @@ class ElasticSink(BatchSink):
             index_mapping = self.config[INDEX_TEMPLATE_FIELDS]
         if METADATA_FIELDS in self.config:
             metadata_fields = self.config[METADATA_FIELDS]
+        # There may be multiple diff configurations for a given stream name (eg. depending on the value
+        # of a field, apply a specific filter)
         diff_enabled = [elem for elem in self.config[CHECK_DIFF]
                         if re.search(elem[STREAM_NAME], self.stream_name)]
         self.logger.info(
@@ -349,16 +365,21 @@ class ElasticSink(BatchSink):
         doc_id = self.build_doc_id(self.stream_name, r)
         if doc_id == "":
             return None
-        diff_event, ignore = self.process_diff_event(
-            index, doc_id, r, diff_enabled[0])
-        if not ignore:
-            # Default insertion: no need for an update in the case of events
-            self.logger.debug(
-                f"Append event for stream {index+DIFF_SUFFIX}: {diff_event}")
-            return {
-                **{"_op_type": "index", "_index": index+DIFF_SUFFIX, "_source": diff_event, "_id": diff_event["id"]},
-                **build_fields(self.stream_name+DIFF_SUFFIX, metadata_fields, diff_event, self.logger),
-            }
+        # Multiple diff settings can be applied for a given stream, eg. csv diff for
+        # mimetype text/csv, text diff for mimetype text/plain, etc.
+        # Realistically, only one diff setting will apply, return a value as soon as
+        # we find a match
+        for diff_settings in diff_enabled:
+            diff_event, ignore = self.process_diff_event(
+                index, doc_id, r, diff_settings)
+            if not ignore:
+                # Default insertion: no need for an update in the case of events
+                self.logger.debug(
+                    f"Append event for stream {index+DIFF_SUFFIX}: {diff_event}")
+                return {
+                    **{"_op_type": "index", "_index": index+DIFF_SUFFIX, "_source": diff_event, "_id": diff_event["id"]},
+                    **build_fields(self.stream_name+DIFF_SUFFIX, metadata_fields, diff_event, self.logger),
+                }
         return None
 
     def process_diff_event(self, main_index: str, doc_id: str, new_doc: Dict[str, str | Dict[str, str] | int], diff_config: Dict) -> Tuple[Dict, bool]:
@@ -370,6 +391,10 @@ class ElasticSink(BatchSink):
         ignored_fields = []
         ignored_fields.extend(diff_config.get(IGNORED_FIELDS, []))
         ignored_fields.extend(DEFAULT_IGNORED_FIELDS)
+        specific_diff_process = diff_config.get(SPECIFIC_DIFF_PROCESS, "")
+        specific_diff_process_data_field  = diff_config.get(SPECIFIC_DIFF_PROCESS_DATA_FIELD, "")
+        specific_diff_process_filter_field  = diff_config.get(SPECIFIC_DIFF_PROCESS_FILTER_FIELD, "")
+        specific_diff_process_filter_value  = diff_config.get(SPECIFIC_DIFF_PROCESS_FILTER_VALUE, "")
 
         diff_event = {}
         diff_event["id"] = f"{doc_id}-event-{evt_time}"
@@ -380,38 +405,61 @@ class ElasticSink(BatchSink):
         diff_event["_sdc_extracted_at"] = new_doc.get("_sdc_extracted_at")
         diff_event["_sdc_batched_at"] = new_doc.get("_sdc_batched_at")
 
-        original_doc_exists = True
-        try:
-            res = self.client.get(index=main_index, id=doc_id)
-            original_doc = res["_source"]
-        except NotFoundError:
-            original_doc_exists = False
-        except Exception as e:
-            # Should not happen -> raise
-            self.logger.error(
-                f"Error while fetching document {doc_id} from {main_index} in order to build diff: {e}")
-            raise e
+        original_doc = self.fetch_cached_doc(index=main_index, doc_id=doc_id)
 
-        if not original_doc_exists:
-            original_doc = {}
-
-        diff_result = dict_diff(original_doc, new_doc, ignored_fields)
-        diff_event["from"] = diff_result["from"]
-        diff_event["to"] = diff_result["to"]
+        ignore = False
+        if not specific_diff_process:
+            diff_result = dict_diff(original_doc, new_doc, ignored_fields)
+            diff_event["from"] = diff_result["from"]
+            diff_event["to"] = diff_result["to"]
+            if len(diff_event.get("from", {}).keys()) == 0 and len(diff_event.get("to", {}).keys()) == 0:
+                ignore = True
+        else:
+            diff_result, ignore = self.specific_diff(original_doc,
+                                                    new_doc,
+                                                    specific_diff_process,
+                                                    specific_diff_process_data_field,
+                                                    specific_diff_process_filter_field,
+                                                    specific_diff_process_filter_value)
+            diff_event["changes"] = diff_result
+        
         # Also include the full docs, to make future queries easier (it's slow if we need to access the original doc for context each time)
         # However, only include the resulting doc because otherwise the diff doc would be too heavy!
         # diff_event["original_doc"] = original_doc
         diff_event["new_doc"] = new_doc
-
-        ignore = False
-        if len(diff_event["from"].keys()) == 0 and len(diff_event["to"].keys()) == 0:
-            ignore = True
-
         diff_event = {k: v for k, v in diff_event.items() if v !=
                       None and v != ""}
 
         return diff_event, ignore
 
+    # Only 16 items in the cache
+    @lru_cache(maxsize=16)
+    def fetch_cached_doc(self, index: str, doc_id: str):
+        try:
+            res = self.client.get(index=index, id=doc_id)
+            original_doc = res["_source"]
+        except NotFoundError:
+            original_doc = {}
+        except Exception as e:
+            # Should not happen -> raise
+            self.logger.error(
+                f"Error while fetching document {doc_id} from {index} in order to build diff: {e}")
+            raise e
+        return original_doc
+
+    def specific_diff(self, old, new, specific_diff_process, specific_diff_process_data_field, specific_diff_process_filter_field, specific_diff_process_filter_value) -> Tuple[Dict[str, Any], bool]:
+        diff = {}
+        old_data = pydash.get(old, specific_diff_process_data_field, "")
+        new_data = pydash.get(new, specific_diff_process_data_field, "")
+        if pydash.get(new, specific_diff_process_filter_field, "") != specific_diff_process_filter_value:
+            return diff, True
+
+        ignore = False
+        if specific_diff_process == SPECIFIC_DIFF_PROCESS_CSV:
+            diff, ignore = spreadsheet_diff(old_data,new_data)
+        if specific_diff_process == SPECIFIC_DIFF_PROCESS_TEXT:
+            diff, ignore = text_diff(old_data,new_data)
+        return diff, ignore
 
 def dict_diff(old, new, ignored_fields):
     diff = {"from": {}, "to": {}}
@@ -437,3 +485,126 @@ def dict_diff(old, new, ignored_fields):
             diff["from"][key] = old[key]
 
     return diff
+
+def spreadsheet_diff(csv_string1, csv_string2):
+    def safe_read_csv(csv_string):
+        if not csv_string.strip():
+            return pd.DataFrame()
+        return pd.read_csv(io.StringIO(csv_string), header=None, dtype=str, keep_default_na=False)
+
+    df1 = safe_read_csv(csv_string1)
+    df2 = safe_read_csv(csv_string2)
+
+    # Ensure both DataFrames have the same number of columns
+    max_cols = max(df1.shape[1], df2.shape[1]) if not df1.empty or not df2.empty else 0
+    df1 = df1.reindex(columns=range(max_cols), fill_value='')
+    df2 = df2.reindex(columns=range(max_cols), fill_value='')
+    
+    changes = []
+    
+    def is_significant_change(val1, val2):
+        # Consider change significant if the values are different
+        # and neither is an empty string or NaN-like value
+        return (val1 != val2) and not (
+            (pd.isna(val1) or val1 == '') and (pd.isna(val2) or val2 == '')
+        )
+
+    # Compare each cell
+    for i in range(max(df1.shape[0], df2.shape[0])):
+        for j in range(max_cols):
+            val1 = df1.iloc[i, j] if i < df1.shape[0] and j < df1.shape[1] else ''
+            val2 = df2.iloc[i, j] if i < df2.shape[0] and j < df2.shape[1] else ''
+            
+            if is_significant_change(val1, val2):
+                changes.append({
+                    'row': i + 1,  # +1 for human-readable row numbers
+                    'column': j + 1,  # +1 for human-readable column numbers
+                    'old_value': val1,
+                    'new_value': val2,
+                })
+    
+    # Analyze structural changes
+    rows_added = df2.shape[0] - df1.shape[0]
+    cols_added = df2.shape[1] - df1.shape[1]
+    
+    # Detect moved content
+    # def find_moved_content(source_df, target_df):
+    #     moved = []
+    #     for i, row in source_df.iterrows():
+    #         row_str = ' '.join(row[row.astype(bool)].astype(str))
+    #         for j, target_row in target_df.iterrows():
+    #             if i != j:  # Avoid comparing the same row index
+    #                 target_row_str = ' '.join(target_row[target_row.astype(bool)].astype(str))
+    #                 similarity = SequenceMatcher(None, row_str, target_row_str).ratio()
+    #                 if similarity == 1:
+    #                     moved.append((i, j))
+    #                     break
+    #     return moved
+    # Moved content processing doesn't work very well for now - TODO: improve this
+    # moved_content = find_moved_content(df1, df2) if not df1.empty and not df2.empty else []
+    
+    ignore_change = len(changes) == 0 and rows_added == 0 and cols_added == 0
+
+    return {
+        'cell_changes': changes,
+        'structural_changes': {
+            'rows_added': rows_added,
+            'columns_added': cols_added,
+        },
+        # 'moved_content': moved_content
+    }, ignore_change
+
+
+
+def text_diff(text1, text2):
+    # Instead of doing a basic diff, doing a diff after word split allows us to better identify
+    # changes. For example, "Hello?" -> "Goodbye" might be interpreted as a series of remove+add 
+    # instead of one single replace.
+    def split_into_words(text):
+        return re.findall(r"\S+|\s+", text)
+
+    lines1 = text1.splitlines()
+    lines2 = text2.splitlines()
+    matcher = difflib.SequenceMatcher(None, lines1, lines2)
+
+    result = []
+    line_number1 = 1
+    line_number2 = 1
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            # Ignore lines which have not changed
+            line_number1 += 1
+            line_number2 += 1
+            # for line in lines1[i1:i2]:
+            #     result.append({"type": "unchanged", "text": line})
+        elif tag in ["replace", "delete", "insert"]:
+            for line1, line2 in zip_longest(lines1[i1:i2], lines2[j1:j2], fillvalue=""):
+                if line1 == line2:
+                    # Ignore unchanged sections within a given line
+                    line_number1 += 1
+                    line_number2 += 1
+                    # result.append({"type": "unchanged", "text": line1})
+                else:
+                    words1 = split_into_words(line1)
+                    words2 = split_into_words(line2)
+                    word_matcher = difflib.SequenceMatcher(None, words1, words2)
+                    line_diff = []
+                    for word_tag, wi1, wi2, wj1, wj2 in word_matcher.get_opcodes():
+                        if word_tag == "equal":
+                            line_diff.append({"type": "unchanged", "text": "".join(words1[wi1:wi2])})
+                        elif word_tag == "delete":
+                            line_diff.append({"type": "removed", "text": "".join(words1[wi1:wi2])})
+                        elif word_tag == "insert":
+                            line_diff.append({"type": "added", "text": "".join(words2[wj1:wj2])})
+                        elif word_tag == "replace":
+                            line_diff.append({"type": "removed", "text": "".join(words1[wi1:wi2])})
+                            line_diff.append({"type": "added", "text": "".join(words2[wj1:wj2])})
+                    result.append({"line_number": line_number2,  "diff": line_diff, "result": line2})
+                    if line1:
+                        line_number1 += 1
+                    if line2:
+                        line_number2 += 1
+
+    ignore_change = len(result) == 0
+    return result, ignore_change
