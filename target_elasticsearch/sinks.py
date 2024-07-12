@@ -5,6 +5,7 @@ from typing import List, Dict, Optional, Union, Any, Tuple, Set
 
 import re
 import io
+import csv
 import concurrent
 import jsonpath_ng
 import singer_sdk.io_base
@@ -380,6 +381,8 @@ class ElasticSink(BatchSink):
                     **{"_op_type": "index", "_index": index+DIFF_SUFFIX, "_source": diff_event, "_id": diff_event["id"]},
                     **build_fields(self.stream_name+DIFF_SUFFIX, metadata_fields, diff_event, self.logger),
                 }
+            # else:
+            #     self.logger.info(f"Ignore diff (no change): stream {index+DIFF_SUFFIX}: {diff_event} ")
         return None
 
     def process_diff_event(self, main_index: str, doc_id: str, new_doc: Dict[str, str | Dict[str, str] | int], diff_config: Dict) -> Tuple[Dict, bool]:
@@ -490,7 +493,21 @@ def spreadsheet_diff(csv_string1, csv_string2):
     def safe_read_csv(csv_string):
         if not csv_string.strip():
             return pd.DataFrame()
-        return pd.read_csv(io.StringIO(csv_string), header=None, dtype=str, keep_default_na=False)
+        
+        max_columns = 0
+        for line in csv.reader(io.StringIO(csv_string)):
+            max_columns = max(max_columns, len(line))
+
+        return pd.read_csv(
+            io.StringIO(csv_string),
+            dtype=str,
+            keep_default_na=False,
+            quotechar='"',
+            escapechar='\\',
+            names=range(max_columns),
+            header=None,
+            on_bad_lines='warn'
+        )
 
     df1 = safe_read_csv(csv_string1)
     df2 = safe_read_csv(csv_string2)
