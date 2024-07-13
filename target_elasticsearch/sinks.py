@@ -362,6 +362,19 @@ class ElasticSink(BatchSink):
 
         return ""
 
+    def _validate_and_parse(self, record: dict) -> dict:
+        try:
+            self._validator.validate(record)
+            self._parse_timestamps_in_record(
+                record=record,
+                schema=self.schema,
+                treatment=self.datetime_error_treatment,
+            )
+        except Exception as e:
+            self.logger.warning(f"Unexpected record raised an exception during validation: {e}. Record details:")
+            self.logger.warning(record)
+        return record
+
     def process_main_records_make_diffs(self, r, index, diff_enabled, metadata_fields):
         doc_id = self.build_doc_id(self.stream_name, r)
         if doc_id == "":
