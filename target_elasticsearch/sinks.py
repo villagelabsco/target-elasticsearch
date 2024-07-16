@@ -50,6 +50,8 @@ from target_elasticsearch.common import (
     DEFAULT_IGNORED_FIELDS,
     SPECIFIC_DIFF_PROCESS_CSV,
     SPECIFIC_DIFF_PROCESS_TEXT,
+    SPECIFIC_DIFF_PROCESS_DICT,
+    SPECIFIC_DIFF_PROCESS_FLAT,
     SPECIFIC_DIFF_PROCESS,
     SPECIFIC_DIFF_PROCESS_DATA_FIELD,
     SPECIFIC_DIFF_PROCESS_FILTER_FIELD,
@@ -426,6 +428,7 @@ class ElasticSink(BatchSink):
         ignore = False
         if not specific_diff_process:
             diff_result = dict_diff(original_doc, new_doc, ignored_fields)
+            diff_event["diff_type"] = diff_result["diff_type"]
             diff_event["from"] = diff_result["from"]
             diff_event["to"] = diff_result["to"]
             if len(diff_event.get("from", {}).keys()) == 0 and len(diff_event.get("to", {}).keys()) == 0:
@@ -475,10 +478,12 @@ class ElasticSink(BatchSink):
             diff, ignore = spreadsheet_diff(old_data,new_data)
         if specific_diff_process == SPECIFIC_DIFF_PROCESS_TEXT:
             diff, ignore = text_diff(old_data,new_data)
+        if specific_diff_process == SPECIFIC_DIFF_PROCESS_FLAT:
+            diff, ignore = flat_diff(old_data,new_data)
         return diff, ignore
 
 def dict_diff(old, new, ignored_fields):
-    diff = {"from": {}, "to": {}}
+    diff = {"from": {}, "to": {}, "diff_type": SPECIFIC_DIFF_PROCESS_DICT}
 
     all_keys = set(old.keys()) | set(new.keys())
 
@@ -576,10 +581,11 @@ def spreadsheet_diff(csv_string1, csv_string2):
     ignore_change = len(changes) == 0 and rows_added == 0 and cols_added == 0
 
     return {
-        'cell_changes': changes,
-        'structural_changes': {
-            'rows_added': rows_added,
-            'columns_added': cols_added,
+        "diff_type": SPECIFIC_DIFF_PROCESS_CSV,
+        "cell_changes": changes,
+        "structural_changes": {
+            "rows_added": rows_added,
+            "columns_added": cols_added,
         },
         # 'moved_content': moved_content
     }, ignore_change
@@ -637,4 +643,13 @@ def text_diff(text1, text2):
                         line_number2 += 1
 
     ignore_change = len(result) == 0
-    return result, ignore_change
+    ret = {"changes": result, "diff_type": SPECIFIC_DIFF_PROCESS_TEXT}
+    return ret, ignore_change
+
+def flat_diff(text1, text2):
+    # Don't do any diff, but keep in an easily accessible format both documents
+    return {
+        "from": text1,
+        "to": text2,
+        "diff_type": SPECIFIC_DIFF_PROCESS_FLAT
+    }

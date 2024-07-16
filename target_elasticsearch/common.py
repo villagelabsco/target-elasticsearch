@@ -39,6 +39,8 @@ DEFAULT_IGNORED_FIELDS = [
     "_sdc_received_at",
     "_sdc_sync_started_at",
 ]
+SPECIFIC_DIFF_PROCESS_DICT = "dict"
+SPECIFIC_DIFF_PROCESS_FLAT = "flat"
 SPECIFIC_DIFF_PROCESS_CSV = "csv"
 SPECIFIC_DIFF_PROCESS_TEXT = "text"
 SPECIFIC_DIFF_PROCESS = "specific_diff_process"
