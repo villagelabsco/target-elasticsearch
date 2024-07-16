@@ -50,6 +50,7 @@ from target_elasticsearch.common import (
     DEFAULT_IGNORED_FIELDS,
     SPECIFIC_DIFF_PROCESS_CSV,
     SPECIFIC_DIFF_PROCESS_TEXT,
+    SPECIFIC_DIFF_PROCESS_TEXT_LINE,
     SPECIFIC_DIFF_PROCESS_DICT,
     SPECIFIC_DIFF_PROCESS_FLAT,
     SPECIFIC_DIFF_PROCESS,
@@ -478,6 +479,8 @@ class ElasticSink(BatchSink):
             diff, ignore = spreadsheet_diff(old_data,new_data)
         if specific_diff_process == SPECIFIC_DIFF_PROCESS_TEXT:
             diff, ignore = text_diff(old_data,new_data)
+        if specific_diff_process == SPECIFIC_DIFF_PROCESS_TEXT_LINE:
+            diff, ignore = text_diff_line(old_data,new_data)
         if specific_diff_process == SPECIFIC_DIFF_PROCESS_FLAT:
             diff, ignore = flat_diff(old_data,new_data)
         return diff, ignore
@@ -644,6 +647,43 @@ def text_diff(text1, text2):
 
     ignore_change = len(result) == 0
     ret = {"changes": result, "diff_type": SPECIFIC_DIFF_PROCESS_TEXT}
+    return ret, ignore_change
+
+def text_diff_line(text1, text2):
+    lines1 = text1.splitlines()
+    lines2 = text2.splitlines()
+    matcher = difflib.SequenceMatcher(None, lines1, lines2)
+
+    result = []
+    line_number1 = 1
+    line_number2 = 1
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            line_number1 += i2 - i1
+            line_number2 += j2 - j1
+        elif tag == "replace":
+            result.append(
+                {
+                    "type": "changed",
+                    "line_number": line_number1,
+                    "text_from": lines1[i1:i2],
+                    "text_to": lines2[j1:j2],
+                }
+            )
+            line_number1 += i2 - i1
+            line_number2 += j2 - j1
+        elif tag == "delete":
+            for line in lines1[i1:i2]:
+                result.append({"type": "removed", "line_number": line_number1, "text": line})
+                line_number1 += 1
+        elif tag == "insert":
+            for line in lines2[j1:j2]:
+                result.append({"type": "added", "line_number": line_number2, "text": line})
+                line_number2 += 1
+
+    ignore_change = len(result) == 0
+    ret = {"changes": result, "diff_type": SPECIFIC_DIFF_PROCESS_TEXT_LINE}
     return ret, ignore_change
 
 def flat_diff(text1, text2):
