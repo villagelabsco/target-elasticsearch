@@ -689,10 +689,13 @@ def text_diff_line(text1, text2):
     return ret, ignore_change
 
 def flat_diff(text1, text2):
+    # Just in case, try a line diff to see if this change should be ignored
+    _, ignore = text_diff_line(text1, text2)
+
     # Don't do any diff, but keep in an easily accessible format both documents
     return {
         "from": text1,
         # No need to include the "to" here: it's already available in the new_doc field
         # "to": text2,
         "diff_type": SPECIFIC_DIFF_PROCESS_FLAT
-    }, False
+    }, ignore
