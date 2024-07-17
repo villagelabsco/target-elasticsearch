@@ -483,6 +483,8 @@ class ElasticSink(BatchSink):
             diff, ignore = text_diff_line(old_data,new_data)
         elif specific_diff_process == SPECIFIC_DIFF_PROCESS_FLAT:
             diff, ignore = flat_diff(old_data,new_data)
+        else:
+            self.logger.error(f"Unsupported specific diff: {specific_diff_process}")
         return diff, ignore
 
 def dict_diff(old, new, ignored_fields):
@@ -693,4 +695,4 @@ def flat_diff(text1, text2):
         # No need to include the "to" here: it's already available in the new_doc field
         # "to": text2,
         "diff_type": SPECIFIC_DIFF_PROCESS_FLAT
-    }
+    }, False
