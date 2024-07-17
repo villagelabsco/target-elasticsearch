@@ -477,11 +477,11 @@ class ElasticSink(BatchSink):
         ignore = False
         if specific_diff_process == SPECIFIC_DIFF_PROCESS_CSV:
             diff, ignore = spreadsheet_diff(old_data,new_data)
-        if specific_diff_process == SPECIFIC_DIFF_PROCESS_TEXT:
+        elif specific_diff_process == SPECIFIC_DIFF_PROCESS_TEXT:
             diff, ignore = text_diff(old_data,new_data)
-        if specific_diff_process == SPECIFIC_DIFF_PROCESS_TEXT_LINE:
+        elif specific_diff_process == SPECIFIC_DIFF_PROCESS_TEXT_LINE:
             diff, ignore = text_diff_line(old_data,new_data)
-        if specific_diff_process == SPECIFIC_DIFF_PROCESS_FLAT:
+        elif specific_diff_process == SPECIFIC_DIFF_PROCESS_FLAT:
             diff, ignore = flat_diff(old_data,new_data)
         return diff, ignore
 
@@ -690,6 +690,7 @@ def flat_diff(text1, text2):
     # Don't do any diff, but keep in an easily accessible format both documents
     return {
         "from": text1,
-        "to": text2,
+        # No need to include the "to" here: it's already available in the new_doc field
+        # "to": text2,
         "diff_type": SPECIFIC_DIFF_PROCESS_FLAT
     }
