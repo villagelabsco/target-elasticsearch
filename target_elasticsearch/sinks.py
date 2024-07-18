@@ -6,6 +6,7 @@ from typing import List, Dict, Optional, Union, Any, Tuple, Set
 import re
 import io
 import csv
+import time
 import concurrent
 import jsonpath_ng
 import singer_sdk.io_base
@@ -129,7 +130,8 @@ def build_fields(
 class ElasticSink(BatchSink):
     """ElasticSink target sink class."""
 
-    max_size = 1000  # Max records to write in one batch
+    # From 1000 to 200: we tend to insert big records, so don't hit as hard
+    max_size = 200  # Max records to write in one batch
 
     def __init__(
         self,
@@ -322,10 +324,29 @@ class ElasticSink(BatchSink):
         """
         records = self.build_body(records)
         self.logger.debug(records)
-        try:
-            bulk(self.client, records)
-        except elasticsearch.helpers.BulkIndexError as e:
-            self.logger.error(e.errors)
+
+        MAX_RETRIES = 5
+        RETRY_DELAY = 20
+
+        for attempt in range(MAX_RETRIES):
+            try:
+                bulk(self.client, records)
+                # Successful -> exit the loop
+                break  
+            except elasticsearch.helpers.BulkIndexError as e:
+                self.logger.error(f"BulkIndexError on attempt {attempt + 1}: {e.errors}")
+                raise  # Re-raise the BulkIndexError as it's not a connection issue
+            except elasticsearch.helpers.ConnectionTimeout as e:
+                if attempt < MAX_RETRIES - 1:
+                    self.logger.warning(f"ConnectionTimeout on attempt {attempt + 1}. Retrying in {RETRY_DELAY} seconds...")
+                    time.sleep(RETRY_DELAY)
+                else:
+                    self.logger.error(f"ConnectionTimeout on final attempt {MAX_RETRIES}: {str(e)}")
+                    raise
+            except Exception as e:
+                self.logger.error(f"Unexpected error on attempt {attempt + 1}: {str(e)}")
+                raise
+
 
     def process_batch(self, context: Dict[str, Any]) -> None:
         """
@@ -392,7 +413,7 @@ class ElasticSink(BatchSink):
             if not ignore:
                 # Default insertion: no need for an update in the case of events
                 self.logger.debug(
-                    f"Append event for stream {index+DIFF_SUFFIX}: {diff_event}")
+                    f"Append event for stream {index+DIFF_SUFFIX}: {doc_id}")
                 return {
                     **{"_op_type": "index", "_index": index+DIFF_SUFFIX, "_source": diff_event, "_id": diff_event["id"]},
                     **build_fields(self.stream_name+DIFF_SUFFIX, metadata_fields, diff_event, self.logger),
