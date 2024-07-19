@@ -336,7 +336,7 @@ class ElasticSink(BatchSink):
             except elasticsearch.helpers.BulkIndexError as e:
                 self.logger.error(f"BulkIndexError on attempt {attempt + 1}: {e.errors}")
                 raise  # Re-raise the BulkIndexError as it's not a connection issue
-            except elasticsearch.helpers.ConnectionTimeout as e:
+            except elasticsearch.exceptions.ConnectionTimeout as e:
                 if attempt < MAX_RETRIES - 1:
                     self.logger.warning(f"ConnectionTimeout on attempt {attempt + 1}. Retrying in {RETRY_DELAY} seconds...")
                     time.sleep(RETRY_DELAY)
