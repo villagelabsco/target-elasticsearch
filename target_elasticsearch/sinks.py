@@ -248,21 +248,38 @@ class ElasticSink(BatchSink):
         """
         for index in indices:
             try:
-                self.client.indices.create(
-                    index=index,
-                    settings={
-                        "index": {
-                            "mapping": {
-                                # Do not raise an error if the schema is not perfect - eg. empty string for a null date
-                                "ignore_malformed": True,
-                                "total_fields": {
-                                    # Default value is 1000, but diff events may get quite big
-                                    "limit": 2000
-                                }
+                settings = {
+                    "index": {
+                        "mapping": {
+                            # Do not raise an error if the schema is not perfect - eg. empty string for a null date
+                            "ignore_malformed": True,
+                            "total_fields": {
+                                # Default value is 1000, but some documents may get very large
+                                "limit": 2000
                             }
                         }
                     }
+                }
+                mapping = None
+                if DIFF_SUFFIX in index:
+                    mapping = {
+                        "dynamic": "false",
+                        "properties": {
+                            "id": {"type": "keyword"},
+                            "main_doc_id": {"type": "keyword"},
+                            "event_ts": {"type": "date"},
+                            "_sdc_batched_at": {"type": "date"},
+                            "_sdc_extracted_at": {"type": "date"},
+                            "_sdc_sequence": {"type": "long"},
+                        }
+                    }
+
+                self.client.indices.create(
+                    index=index,
+                    settings=settings,
+                    mappings=mapping
                 )
+                self.logger.info(f"created index {index}")
             except elasticsearch.exceptions.RequestError as e:
                 if e.error == "resource_already_exists_exception":
                     self.logger.debug(
