@@ -260,7 +260,27 @@ class ElasticSink(BatchSink):
                         }
                     }
                 }
-                mapping = None
+                mapping = {
+                    "dynamic": "true",
+                    "dynamic_templates": [
+                        {
+                            "strings_as_text": {
+                                "match_mapping_type": "string",
+                                "mapping": {
+                                    "type": "text",
+                                    "fields": {
+                                        "keyword": {
+                                            "type": "keyword",
+                                            "ignore_above": 256
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                    ],
+                }
+
+
                 if DIFF_SUFFIX in index:
                     mapping = {
                         "dynamic": "false",
@@ -284,6 +304,9 @@ class ElasticSink(BatchSink):
                 if e.error == "resource_already_exists_exception":
                     self.logger.debug(
                         "index already created skipping creation")
+                elif e.error == "invalid_index_name_exception":
+                    # The index may already exist as an alias if there was a past migration
+                    self.logger.debug("index already created skipping creation")
                 else:  # Other exception - raise it
                     raise e
 
