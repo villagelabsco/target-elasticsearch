@@ -130,8 +130,8 @@ def build_fields(
 class ElasticSink(BatchSink):
     """ElasticSink target sink class."""
 
-    # From 1000 to 200: we tend to insert big records, so don't hit as hard
-    max_size = 200  # Max records to write in one batch
+    # From 1000 to 100: we tend to insert big records, so don't hit as hard. Try to avoid 429 errors when hitting Elastic
+    max_size = 100  # Max records to write in one batch
 
     def __init__(
         self,
