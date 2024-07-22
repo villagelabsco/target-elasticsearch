@@ -59,6 +59,7 @@ from target_elasticsearch.common import (
     SPECIFIC_DIFF_PROCESS_FILTER_FIELD,
     SPECIFIC_DIFF_PROCESS_FILTER_VALUE,
     DIFF_SUFFIX,
+    DEFAULT_TIMEOUT,
     to_daily,
     to_monthly,
     to_yearly,
@@ -366,6 +367,7 @@ class ElasticSink(BatchSink):
             self.logger.info("using default elastic search connection config")
 
         config["headers"] = {"user-agent": self._elasticsearch_user_agent()}
+        config["request_timeout"] = DEFAULT_TIMEOUT
 
         return elasticsearch.Elasticsearch(**config)
 
