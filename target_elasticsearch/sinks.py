@@ -246,69 +246,83 @@ class ElasticSink(BatchSink):
         create_indices creates elastic indices using cluster defaults
         @param indices: set
         """
+        MAX_RETRIES = 5
+        RETRY_DELAY = 20
+
         for index in indices:
-            try:
-                settings = {
-                    "index": {
-                        "mapping": {
-                            # Do not raise an error if the schema is not perfect - eg. empty string for a null date
-                            "ignore_malformed": True,
-                            "total_fields": {
-                                # Default value is 1000, but some documents may get very large
-                                "limit": 2000
+            for attempt in range(MAX_RETRIES):
+                try:
+                    settings = {
+                        "index": {
+                            "mapping": {
+                                # Do not raise an error if the schema is not perfect - eg. empty string for a null date
+                                "ignore_malformed": True,
+                                "total_fields": {
+                                    # Default value is 1000, but some documents may get very large
+                                    "limit": 2000
+                                }
                             }
                         }
                     }
-                }
-                mapping = {
-                    "dynamic": "true",
-                    "dynamic_templates": [
-                        {
-                            "strings_as_text": {
-                                "match_mapping_type": "string",
-                                "mapping": {
-                                    "type": "text",
-                                    "fields": {
-                                        "keyword": {
-                                            "type": "keyword",
-                                            "ignore_above": 256
+                    mapping = {
+                        "dynamic": "true",
+                        "dynamic_templates": [
+                            {
+                                "strings_as_text": {
+                                    "match_mapping_type": "string",
+                                    "mapping": {
+                                        "type": "text",
+                                        "fields": {
+                                            "keyword": {
+                                                "type": "keyword",
+                                                "ignore_above": 256
+                                            }
                                         }
                                     }
                                 }
-                            }
-                        },
-                    ],
-                }
-
-
-                if DIFF_SUFFIX in index:
-                    mapping = {
-                        "dynamic": "false",
-                        "properties": {
-                            "id": {"type": "keyword"},
-                            "main_doc_id": {"type": "keyword"},
-                            "event_ts": {"type": "date"},
-                            "_sdc_batched_at": {"type": "date"},
-                            "_sdc_extracted_at": {"type": "date"},
-                            "_sdc_sequence": {"type": "long"},
-                        }
+                            },
+                        ],
                     }
 
-                self.client.indices.create(
-                    index=index,
-                    settings=settings,
-                    mappings=mapping
-                )
-                self.logger.info(f"created index {index}")
-            except elasticsearch.exceptions.RequestError as e:
-                if e.error == "resource_already_exists_exception":
-                    self.logger.debug(
-                        "index already created skipping creation")
-                elif e.error == "invalid_index_name_exception":
-                    # The index may already exist as an alias if there was a past migration
-                    self.logger.debug("index already created skipping creation")
-                else:  # Other exception - raise it
-                    raise e
+
+                    if DIFF_SUFFIX in index:
+                        mapping = {
+                            "dynamic": "false",
+                            "properties": {
+                                "id": {"type": "keyword"},
+                                "main_doc_id": {"type": "keyword"},
+                                "event_ts": {"type": "date"},
+                                "_sdc_batched_at": {"type": "date"},
+                                "_sdc_extracted_at": {"type": "date"},
+                                "_sdc_sequence": {"type": "long"},
+                            }
+                        }
+
+                    self.client.indices.create(
+                        index=index,
+                        settings=settings,
+                        mappings=mapping
+                    )
+                    self.logger.info(f"created index {index}")
+                except elasticsearch.exceptions.RequestError as e:
+                    if e.error == "resource_already_exists_exception":
+                        self.logger.debug(
+                            "index already created skipping creation")
+                    elif e.error == "invalid_index_name_exception":
+                        # The index may already exist as an alias if there was a past migration
+                        self.logger.debug("index already created skipping creation")
+                    else:  # Other exception - raise it
+                        raise e
+                except elasticsearch.exceptions.ConnectionTimeout as e:
+                    if attempt < MAX_RETRIES - 1:
+                        self.logger.warning(f"ConnectionTimeout on attempt {attempt + 1}. Retrying in {RETRY_DELAY} seconds...")
+                        time.sleep(RETRY_DELAY)
+                    else:
+                        self.logger.error(f"ConnectionTimeout on final attempt {MAX_RETRIES}: {str(e)}")
+                        raise
+                except Exception as e:
+                    self.logger.error(f"Unexpected error on attempt {attempt + 1}: {str(e)}")
+                    raise
 
     def build_body(
         self, records: List[Dict[str, Union[str, Dict[str, str], int]]]
