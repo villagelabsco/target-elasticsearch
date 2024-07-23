@@ -451,8 +451,10 @@ class ElasticSink(BatchSink):
                 treatment=self.datetime_error_treatment,
             )
         except Exception as e:
-            self.logger.warning(f"Unexpected record raised an exception during validation: {e}. Record details:")
-            self.logger.warning(record)
+            # This actually causes more spam than necessary - it may happen if some timestamps are cast as dates, but are loaded as timestamps
+            pass
+            # self.logger.warning(f"Unexpected record raised an exception during validation: {e}. Record details:")
+            # self.logger.warning(record)
         return record
 
     def process_main_records_make_diffs(self, r, index, diff_enabled, metadata_fields):
