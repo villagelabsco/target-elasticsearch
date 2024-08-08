@@ -291,7 +291,7 @@ class ElasticSink(BatchSink):
                             "dynamic": "false",
                             "properties": {
                                 "id": {"type": "keyword"},
-                                "main_doc_id": {"type": "keyword"},
+                                "main_doc_key": {"type": "keyword"},
                                 "event_ts": {"type": "date"},
                                 "_sdc_batched_at": {"type": "date"},
                                 "_sdc_extracted_at": {"type": "date"},
