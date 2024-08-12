@@ -283,6 +283,16 @@ class ElasticSink(BatchSink):
                                 }
                             },
                         ],
+                        # Some properties may be problematic - it's the case for fields called "properties",
+                        # which usually cause more problems than it solves -> disable dynamic mapping, and
+                        # store the field without indexing the contents
+                        "properties": {
+                            "properties": {
+                                "type": "object",
+                                "dynamic": "false",
+                                "enabled": False
+                            }
+                        }
                     }
 
 
