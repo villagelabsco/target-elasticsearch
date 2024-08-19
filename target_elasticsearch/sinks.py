@@ -260,14 +260,31 @@ class ElasticSink(BatchSink):
                                 "ignore_malformed": True,
                                 "total_fields": {
                                     # Default value is 1000, but some documents may get very large
-                                    "limit": 2000
-                                }
-                            }
+                                    "limit": 2000,
+                                    # This would be very useful, but somehow our ES instance does not support it
+                                    # "ignore_dynamic_beyond_limit": True,
+                                },
+                            },
                         }
                     }
                     mapping = {
                         "dynamic": "true",
                         "dynamic_templates": [
+                            # {
+                            #     # Some properties may be problematic - it's the case for fields called "properties",
+                            #     # which usually cause more problems than it solves -> disable dynamic mapping, and
+                            #     # store the field without indexing the contents
+                            #     # --- Keep this around as documentation, but this cannot work: enabled: false only
+                            #     # top-level fields.
+                            #     "disable_properties_fields": {
+                            #         "match_pattern": "regex",
+                            #         "match": "properties",
+                            #         "mapping": {
+                            #             "type": "object",
+                            #             "enabled": False,
+                            #         }
+                            #     }
+                            # },
                             {
                                 "strings_as_text": {
                                     "match_mapping_type": "string",
@@ -283,15 +300,29 @@ class ElasticSink(BatchSink):
                                 }
                             },
                         ],
-                        # Some properties may be problematic - it's the case for fields called "properties",
-                        # which usually cause more problems than it solves -> disable dynamic mapping, and
-                        # store the field without indexing the contents
                         "properties": {
                             "properties": {
                                 "type": "object",
                                 "dynamic": "false",
                                 "enabled": False
-                            }
+                            },
+                            # Not very elegant - maybe make this a config input, but we need to explicitly
+                            # avoid indexing some fields for specific taps
+                            "customFields": {
+                                "type": "object",
+                                "dynamic": "false",
+                                "enabled": False
+                            },
+                            "formDefinition": {
+                                "type": "object",
+                                "dynamic": "false",
+                                "enabled": False
+                            },
+                            "submittedValues": {
+                                "type": "object",
+                                "dynamic": "false",
+                                "enabled": False
+                            },
                         }
                     }
 
