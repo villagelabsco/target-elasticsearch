@@ -24,6 +24,7 @@ PREFERRED_PKEY = {
     "threads": ("client_msg_id"),
 }
 CHECK_DIFF = "check_diff"
+CUSTOM_MAPPINGS = "custom_mappings"
 DIFF_SUFFIX = "-diff-events"
 STREAM_NAME = "stream_name"
 EVENT_TIME_KEY = "event_time_key"

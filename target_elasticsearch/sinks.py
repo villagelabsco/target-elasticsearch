@@ -45,6 +45,7 @@ from target_elasticsearch.common import (
     NAME,
     PREFERRED_PKEY,
     CHECK_DIFF,
+    CUSTOM_MAPPINGS,
     STREAM_NAME,
     EVENT_TIME_KEY,
     IGNORED_FIELDS,
@@ -250,6 +251,11 @@ class ElasticSink(BatchSink):
         MAX_RETRIES = 5
         RETRY_DELAY = 20
 
+        custom_mapping = None
+        if self.stream_name in self.config.get(CUSTOM_MAPPINGS, {}):
+            logging.info(f"Using custom mapping for {self.stream_name}")
+            custom_mapping = self.config[CUSTOM_MAPPINGS][self.stream_name]
+
         for index in indices:
             for attempt in range(MAX_RETRIES):
                 try:
@@ -339,6 +345,11 @@ class ElasticSink(BatchSink):
                                 "_sdc_sequence": {"type": "long"},
                             }
                         }
+
+                    # Allow Meltano to override the mapping for any given stream
+                    # This is useful for semi-broken schemas, with changing fields
+                    if custom_mapping:
+                        mapping = custom_mapping
 
                     self.client.indices.create(
                         index=index,
