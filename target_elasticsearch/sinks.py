@@ -409,6 +409,7 @@ class ElasticSink(BatchSink):
 
         config["headers"] = {"user-agent": self._elasticsearch_user_agent()}
         config["request_timeout"] = DEFAULT_TIMEOUT
+        config["retry_on_timeout"] = True
 
         return elasticsearch.Elasticsearch(**config)
 

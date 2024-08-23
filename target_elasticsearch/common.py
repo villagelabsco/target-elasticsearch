@@ -48,7 +48,7 @@ SPECIFIC_DIFF_PROCESS = "specific_diff_process"
 SPECIFIC_DIFF_PROCESS_DATA_FIELD = "specific_diff_process_data_field"
 SPECIFIC_DIFF_PROCESS_FILTER_FIELD = "specific_diff_process_filter_field"
 SPECIFIC_DIFF_PROCESS_FILTER_VALUE = "specific_diff_process_filter_value"
-DEFAULT_TIMEOUT = 60 # seconds, instead of the 10s default
+DEFAULT_TIMEOUT = 300 # seconds, instead of the 10s default
 
 
 def to_daily(date) -> str:
