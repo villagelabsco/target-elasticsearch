@@ -14,7 +14,7 @@ import pydash
 import difflib
 import pandas as pd
 import numpy as np
-from elasticsearch.helpers import bulk
+from elasticsearch.helpers import bulk, parallel_bulk
 from elasticsearch.exceptions import NotFoundError
 from singer_sdk import PluginBase
 from singer_sdk.sinks import BatchSink
@@ -428,7 +428,9 @@ class ElasticSink(BatchSink):
 
         for attempt in range(MAX_RETRIES):
             try:
-                bulk(self.client, records)
+                # Some documents may be very heavy, eg full Drive documents or diffs
+                # -> Apply a 25MB chunk limit instead of the default 100MB
+                parallel_bulk(self.client, records, max_chunk_bytes=25*1024*1024)
                 # Successful -> exit the loop
                 break  
             except elasticsearch.helpers.BulkIndexError as e:
