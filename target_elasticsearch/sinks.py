@@ -650,21 +650,24 @@ def spreadsheet_diff(csv_string1, csv_string2):
     def safe_read_csv(csv_string):
         if not csv_string.strip():
             return pd.DataFrame()
-        
-        max_columns = 0
-        for line in csv.reader(io.StringIO(csv_string)):
-            max_columns = max(max_columns, len(line))
+        try:
+            max_columns = 0
+            for line in csv.reader(io.StringIO(csv_string)):
+                max_columns = max(max_columns, len(line))
 
-        return pd.read_csv(
-            io.StringIO(csv_string),
-            dtype=str,
-            keep_default_na=False,
-            quotechar='"',
-            escapechar='\\',
-            names=range(max_columns),
-            header=None,
-            on_bad_lines='warn'
-        )
+            return pd.read_csv(
+                io.StringIO(csv_string),
+                dtype=str,
+                keep_default_na=False,
+                quotechar='"',
+                escapechar='\\',
+                names=range(max_columns),
+                header=None,
+                on_bad_lines='warn'
+            )
+        except Exception as e:
+            logging.warning(f"Invalid CSV string input, pandas exception: {e}. Consider a null document")
+            return pd.DataFrame()
 
     df1 = safe_read_csv(csv_string1)
     df2 = safe_read_csv(csv_string2)
