@@ -17,6 +17,7 @@ from target_elasticsearch.common import (
     INDEX_TEMPLATE_FIELDS,
     METADATA_FIELDS,
     CHECK_DIFF,
+    CUSTOM_MAPPINGS,
     STREAM_NAME,
     EVENT_TIME_KEY,
     IGNORED_FIELDS,
@@ -154,6 +155,12 @@ class TargetElasticsearch(Target):
             description="build diff event indexes for the streams included in this array",
             default=[],
             required=False,
+        ),
+        th.Property(
+            CUSTOM_MAPPINGS,
+            th.ObjectType(),
+            description="""Define a custom mapping for the specified stream keys""",
+            default={},
         ),
     ).to_dict()
     default_sink_class = sinks.ElasticSink
