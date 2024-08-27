@@ -441,7 +441,9 @@ class ElasticSink(BatchSink):
             try:
                 # Some documents may be very heavy, eg full Drive documents or diffs
                 # -> Apply a 25MB chunk limit instead of the default 100MB
-                parallel_bulk(self.client, records, max_chunk_bytes=25*1024*1024)
+                # parallel_bulk(self.client, records, max_chunk_bytes=25*1024*1024)
+                # -- The above caused some dropped records - revert to the previous simple bulk insert
+                bulk(self.client, records)
                 # Successful -> exit the loop
                 break  
             except elasticsearch.helpers.BulkIndexError as e:
