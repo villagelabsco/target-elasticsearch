@@ -491,7 +491,7 @@ class ElasticSink(BatchSink):
 
         # 2. Best effort to avoid duplicates:
         # In descending priority, try to match a field which looks like a primary key
-        id_fields = ["id", "ID", "Id", "accountId",
+        id_fields = ["id", "ID", "Id", "gid", "accountId",
                      "sha", "hash", "node_id", "idx", "key", "ts", "name"]
         for id_field in id_fields:
             if id_field in r:
