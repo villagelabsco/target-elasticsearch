@@ -39,6 +39,9 @@ DEFAULT_IGNORED_FIELDS = [
     "_sdc_batched_at",
     "_sdc_received_at",
     "_sdc_sync_started_at",
+    # Some Hubspot fields should always be ignored
+    "hs_lastmodifieddate",
+    "hs_deal_score",
 ]
 SPECIFIC_DIFF_PROCESS_DICT = "dict"
 SPECIFIC_DIFF_PROCESS_FLAT = "flat"
