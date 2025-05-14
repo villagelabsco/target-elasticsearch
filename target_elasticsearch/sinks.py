@@ -461,8 +461,11 @@ class ElasticSink(BatchSink):
                 # Successful -> exit the loop
                 break  
             except elasticsearch.helpers.BulkIndexError as e:
+                # VD-7482: this is something we may accept, e.g the document is way too big - just don't crash.
                 self.logger.error(f"BulkIndexError on attempt {attempt + 1}: {e.errors}")
-                raise  # Re-raise the BulkIndexError as it's not a connection issue
+                failed_records = insert_individual_records(records)
+                if failed_records:
+                    self.logger.error(f"Failed to insert {len(failed_records)} records even in individual mode (bulk error). Ignore error")
             except elasticsearch.exceptions.ConnectionTimeout as e:
                 if attempt < MAX_RETRIES - 1:
                     self.logger.warning(f"ConnectionTimeout on attempt {attempt + 1}. Retrying in {RETRY_DELAY} seconds...")
