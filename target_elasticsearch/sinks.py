@@ -1,6 +1,6 @@
 import elasticsearch
 import jinja2
-
+import json
 from typing import List, Dict, Optional, Union, Any, Tuple, Set
 
 import re
@@ -485,8 +485,12 @@ class ElasticSink(BatchSink):
                         self.logger.error(
                             f"Failed to insert {len(failed_records)} records even in individual mode on attempt {attempt + 1}: "
                         )
-                        self.logger.error("------")
-                        self.logger.error(failed_records)
+                        dump = json.dumps(failed_records)
+                        self.logger.error("------ JSON length: " + str(len(dump)))
+                        self.logger.error(dump[:2500] + ("..." if len(dump) > 2500 else ""))
+                        if len(dump) > 2500:
+                            self.logger.error("End of truncated JSON:")
+                            self.logger.error(dump[2500:])
                         self.logger.error("------")
                         self.logger.error(f"Will retry in {RETRY_DELAY} seconds")
                         time.sleep(RETRY_DELAY)
