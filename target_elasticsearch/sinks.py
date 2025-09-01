@@ -462,7 +462,8 @@ class ElasticSink(BatchSink):
                 break  
             except elasticsearch.helpers.BulkIndexError as e:
                 # VD-7482: this is something we may accept, e.g the document is way too big - just don't crash.
-                self.logger.error(f"BulkIndexError on attempt {attempt + 1}: {e.errors}")
+                err_str = f"{e.errors}"[0:1000]
+                self.logger.error(f"BulkIndexError on attempt {attempt + 1}: {err_str}")
                 failed_records = insert_individual_records(records)
                 if failed_records:
                     self.logger.error(f"Failed to insert {len(failed_records)} records even in individual mode (bulk error). Ignore error")
