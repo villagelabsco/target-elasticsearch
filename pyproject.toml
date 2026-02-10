@@ -25,6 +25,8 @@ time-machine = "^2.8.2"
 typing-extensions = "^4.4.0"
 pydash = "^8.0.1"
 pandas = "^2.2.2"
+setuptools = "<82"
+
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.1.2"
