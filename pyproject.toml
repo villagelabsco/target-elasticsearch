@@ -26,6 +26,9 @@ typing-extensions = "^4.4.0"
 pydash = "^8.0.1"
 pandas = "^2.2.2"
 setuptools = "<82"
+pyjwt = ">=2.15.0"
+cryptography = { version = ">=49.0.0", python = ">3.9.1" }
+simpleeval = ">=1.0.5"
 
 
 [tool.poetry.dev-dependencies]
@@ -37,6 +40,7 @@ pydocstyle = "^6.1.1"
 mypy = "^0.960"
 isort = "^5.10.1"
 pre-commit = "^2.19.0"
+virtualenv = ">=21.14.9"
 
 [tool.isort]
 profile = "black"
