@@ -4,7 +4,7 @@ on: [push]
 
 jobs:
   linting:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         python-version: [3.9]
@@ -27,7 +27,7 @@ jobs:
         poetry run pre-commit install
         poetry run pre-commit run --all-files
   pytest:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         python-version: [ "3.9", "3.10", "3.11"]
@@ -50,7 +50,7 @@ jobs:
         poetry run pytest --capture=no
 
   integration:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     env:
       python-version: "3.9"
     steps:
