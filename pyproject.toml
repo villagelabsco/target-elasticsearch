@@ -14,7 +14,7 @@ license = "GNU v3"
 
 
 [tool.poetry.dependencies]
-python = "<3.12,>=3.9.1"
+python = "<3.12,>=3.10"
 requests = "^2.25.1"
 singer-sdk = "^0.34.1"
 elasticsearch = "^8.5.2"
@@ -27,7 +27,7 @@ pydash = "^8.0.1"
 pandas = "^2.2.2"
 setuptools = "<82"
 pyjwt = ">=2.15.0"
-cryptography = { version = ">=49.0.0", python = ">3.9.1" }
+cryptography = ">=49.0.0"
 simpleeval = ">=1.0.5"
 
 

@@ -4,10 +4,10 @@ on: [push]
 
 jobs:
   linting:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.9]
+        python-version: ["3.11"]
     steps:
     - uses: actions/checkout@v2
     - name: Set up Python '${{ matrix.python-version }}'
@@ -27,10 +27,10 @@ jobs:
         poetry run pre-commit install
         poetry run pre-commit run --all-files
   pytest:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [ "3.9", "3.10", "3.11"]
+        python-version: [ "3.10", "3.11"]
     steps:
     - uses: actions/checkout@v2
     - name: Set up Python '${{ matrix.python-version }}'
@@ -50,9 +50,9 @@ jobs:
         poetry run pytest --capture=no
 
   integration:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     env:
-      python-version: "3.9"
+      python-version: "3.11"
     steps:
     - uses: actions/checkout@v2
     - name: Set up Python ${{ env.python-version }}
