@@ -9,7 +9,7 @@ import csv
 import time
 import concurrent
 import jsonpath_ng
-import singer_sdk.io_base
+import logging
 import pydash
 import difflib
 import pandas as pd
@@ -98,7 +98,7 @@ def build_fields(
     stream_name: str,
     mapping: Dict,
     record: Dict[str, Union[str, Dict[str, str], int]],
-    logger: singer_sdk.io_base.logger,
+    logger: logging.Logger,
 ) -> Dict:
     """
     build_fields parses records for supplied mapping to be used later in index templating and ecs metadata field formulation

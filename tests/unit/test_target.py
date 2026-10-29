@@ -2,7 +2,7 @@ import datetime
 import unittest
 from unittest import mock
 
-import singer_sdk.io_base
+import logging
 import time_machine
 from target_elasticsearch.sinks import template_index, build_fields
 
@@ -50,7 +50,7 @@ def test_template_index():
 
 
 def test_build_fields():
-    logger = singer_sdk.io_base.logger
+    logger = logging.getLogger(__name__)
     assert {} == build_fields("", {}, {}, logger)
     record = {
         "id": 1,
