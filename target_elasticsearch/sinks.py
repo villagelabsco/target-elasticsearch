@@ -21,7 +21,6 @@ from itertools import zip_longest
 from functools import lru_cache
 
 import datetime
-import logging
 
 from target_elasticsearch.common import (
     INDEX_FORMAT,
