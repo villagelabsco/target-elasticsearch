@@ -139,17 +139,20 @@ class TargetElasticsearch(Target):
             th.ArrayType(
                 th.ObjectType(
                     th.Property(
-                        STREAM_NAME, 
+                        STREAM_NAME,
                         th.StringType,
-                        description="stream name for which you wish to build a diff index"),
+                        description="stream name for which you wish to build a diff index",
+                    ),
                     th.Property(
-                        EVENT_TIME_KEY, 
+                        EVENT_TIME_KEY,
                         th.StringType,
-                        description="document key which should be used for the event's timestamp"),
+                        description="document key which should be used for the event's timestamp",
+                    ),
                     th.Property(
                         IGNORED_FIELDS,
                         th.ArrayType(th.StringType),
-                        description="list of keys (strings) which should be ignored when comparing old/new documents."),
+                        description="list of keys (strings) which should be ignored when comparing old/new documents.",
+                    ),
                 )
             ),
             description="build diff event indexes for the streams included in this array",

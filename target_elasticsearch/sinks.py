@@ -9,21 +9,18 @@ import csv
 import time
 import concurrent
 import jsonpath_ng
-import singer_sdk.io_base
+import logging
 import pydash
 import difflib
 import pandas as pd
-import numpy as np
-from elasticsearch.helpers import bulk, parallel_bulk
+from elasticsearch.helpers import bulk
 from elasticsearch.exceptions import NotFoundError
 from singer_sdk import PluginBase
 from singer_sdk.sinks import BatchSink
-from difflib import SequenceMatcher
 from itertools import zip_longest
 from functools import lru_cache
 
 import datetime
-import logging
 
 from target_elasticsearch.common import (
     INDEX_FORMAT,
@@ -100,7 +97,7 @@ def build_fields(
     stream_name: str,
     mapping: Dict,
     record: Dict[str, Union[str, Dict[str, str], int]],
-    logger: singer_sdk.io_base.logger,
+    logger: logging.Logger,
 ) -> Dict:
     """
     build_fields parses records for supplied mapping to be used later in index templating and ecs metadata field formulation
@@ -145,9 +142,8 @@ class ElasticSink(BatchSink):
         super().__init__(target, stream_name, schema, key_properties)
         self.client = self._authenticated_client()
         # Overload Elasticsearch's logging level
-        logging.getLogger('elastic_transport.transport').setLevel(logging.WARNING)
-        logging.getLogger('elasticsearch').setLevel(logging.WARNING)
-
+        logging.getLogger("elastic_transport.transport").setLevel(logging.WARNING)
+        logging.getLogger("elasticsearch").setLevel(logging.WARNING)
 
     def build_request_body_and_distinct_indices(
         self, records: List[Dict[str, Union[str, Dict[str, str], int]]]
@@ -168,10 +164,12 @@ class ElasticSink(BatchSink):
             metadata_fields = self.config[METADATA_FIELDS]
         # There may be multiple diff configurations for a given stream name (eg. depending on the value
         # of a field, apply a specific filter)
-        diff_enabled = [elem for elem in self.config[CHECK_DIFF]
-                        if re.search(elem[STREAM_NAME], self.stream_name)]
-        self.logger.info(
-            f"Diff enabled for stream {self.stream_name}:: {len(diff_enabled) > 0}")
+        diff_enabled = [
+            elem
+            for elem in self.config[CHECK_DIFF]
+            if re.search(elem[STREAM_NAME], self.stream_name)
+        ]
+        self.logger.info(f"Diff enabled for stream {self.stream_name}:: {len(diff_enabled) > 0}")
         for r in records:
             index = template_index(
                 self.stream_name,
@@ -185,13 +183,14 @@ class ElasticSink(BatchSink):
                 # Upsert logic:
                 # ctx.op == create => If the document does not exist, insert r including _sdc_sequence
                 # Else, if the document exists, update with all fields from r except _sdc_sequence
-                updated_records.append({
-                    "_op_type": "update",
-                    "_index": index,
-                    "_id": doc_id,
-                    "scripted_upsert": True,
-                    "script": {
-                        "source": """
+                updated_records.append(
+                    {
+                        "_op_type": "update",
+                        "_index": index,
+                        "_id": doc_id,
+                        "scripted_upsert": True,
+                        "script": {
+                            "source": """
                         if (ctx.op == 'create') {
                             ctx._source.putAll(params.r);
                         } else {
@@ -203,16 +202,19 @@ class ElasticSink(BatchSink):
                             }
                         }
                         """,
-                        "lang": "painless",
-                        "params": {
-                            "r": {
-                                **r,
-                                **build_fields(self.stream_name, metadata_fields, r, self.logger)
-                            }
-                        }
-                    },
-                    "upsert": {}  # Empty document for upsert; actual content is managed by the script
-                })
+                            "lang": "painless",
+                            "params": {
+                                "r": {
+                                    **r,
+                                    **build_fields(
+                                        self.stream_name, metadata_fields, r, self.logger
+                                    ),
+                                }
+                            },
+                        },
+                        "upsert": {},  # Empty document for upsert; actual content is managed by the script
+                    }
+                )
             else:
                 # Default insertion
                 updated_records.append(
@@ -228,14 +230,21 @@ class ElasticSink(BatchSink):
                 self.config[INDEX_FORMAT],
                 build_fields(self.stream_name, index_mapping, r, self.logger),
             )
-            distinct_indices.add(index+DIFF_SUFFIX)
+            distinct_indices.add(index + DIFF_SUFFIX)
             # Diff processing is something which can take a long time, as queries need to be made
             # -> Parallelize these checks
-            self.logger.info(
-                f"Generate diff records based on the {len(records)} new records")
+            self.logger.info(f"Generate diff records based on the {len(records)} new records")
             with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-                futures = [executor.submit(self.process_main_records_make_diffs, record, index, diff_enabled, metadata_fields)
-                           for record in records]
+                futures = [
+                    executor.submit(
+                        self.process_main_records_make_diffs,
+                        record,
+                        index,
+                        diff_enabled,
+                        metadata_fields,
+                    )
+                    for record in records
+                ]
                 for future in concurrent.futures.as_completed(futures):
                     result = future.result()
                     if result is not None:
@@ -297,41 +306,33 @@ class ElasticSink(BatchSink):
                                     "mapping": {
                                         "type": "text",
                                         "fields": {
-                                            "keyword": {
-                                                "type": "keyword",
-                                                "ignore_above": 256
-                                            }
-                                        }
-                                    }
+                                            "keyword": {"type": "keyword", "ignore_above": 256}
+                                        },
+                                    },
                                 }
                             },
                         ],
                         "properties": {
-                            "properties": {
-                                "type": "object",
-                                "dynamic": "false",
-                                "enabled": False
-                            },
+                            "properties": {"type": "object", "dynamic": "false", "enabled": False},
                             # Not very elegant - maybe make this a config input, but we need to explicitly
                             # avoid indexing some fields for specific taps
                             "customFields": {
                                 "type": "object",
                                 "dynamic": "false",
-                                "enabled": False
+                                "enabled": False,
                             },
                             "formDefinition": {
                                 "type": "object",
                                 "dynamic": "false",
-                                "enabled": False
+                                "enabled": False,
                             },
                             "submittedValues": {
                                 "type": "object",
                                 "dynamic": "false",
-                                "enabled": False
+                                "enabled": False,
                             },
-                        }
+                        },
                     }
-
 
                     if DIFF_SUFFIX in index:
                         mapping = {
@@ -343,7 +344,7 @@ class ElasticSink(BatchSink):
                                 "_sdc_batched_at": {"type": "date"},
                                 "_sdc_extracted_at": {"type": "date"},
                                 "_sdc_sequence": {"type": "long"},
-                            }
+                            },
                         }
 
                     # Allow Meltano to override the mapping for any given stream
@@ -351,16 +352,11 @@ class ElasticSink(BatchSink):
                     if custom_mapping:
                         mapping = custom_mapping
 
-                    self.client.indices.create(
-                        index=index,
-                        settings=settings,
-                        mappings=mapping
-                    )
+                    self.client.indices.create(index=index, settings=settings, mappings=mapping)
                     self.logger.info(f"created index {index}")
                 except elasticsearch.exceptions.RequestError as e:
                     if e.error == "resource_already_exists_exception":
-                        self.logger.debug(
-                            "index already created skipping creation")
+                        self.logger.debug("index already created skipping creation")
                     elif e.error == "invalid_index_name_exception":
                         # The index may already exist as an alias if there was a past migration
                         self.logger.debug("index already created skipping creation")
@@ -368,10 +364,14 @@ class ElasticSink(BatchSink):
                         raise e
                 except elasticsearch.exceptions.ConnectionTimeout as e:
                     if attempt < MAX_RETRIES - 1:
-                        self.logger.warning(f"ConnectionTimeout on attempt {attempt + 1}. Retrying in {RETRY_DELAY} seconds...")
+                        self.logger.warning(
+                            f"ConnectionTimeout on attempt {attempt + 1}. Retrying in {RETRY_DELAY} seconds..."
+                        )
                         time.sleep(RETRY_DELAY)
                     else:
-                        self.logger.error(f"ConnectionTimeout on final attempt {MAX_RETRIES}: {str(e)}")
+                        self.logger.error(
+                            f"ConnectionTimeout on final attempt {MAX_RETRIES}: {str(e)}"
+                        )
                         raise
                 except Exception as e:
                     self.logger.error(f"Unexpected error on attempt {attempt + 1}: {str(e)}")
@@ -385,8 +385,7 @@ class ElasticSink(BatchSink):
         @param records: str
         @return: list[dict[Union[str, Any], Union[str, Any]]]
         """
-        updated_records, distinct_indices = self.build_request_body_and_distinct_indices(
-            records)
+        updated_records, distinct_indices = self.build_request_body_and_distinct_indices(records)
         self.create_indices(distinct_indices)
         return updated_records
 
@@ -403,12 +402,10 @@ class ElasticSink(BatchSink):
             scheme = "https"
             config["ca_certs"] = self.config[SSL_CA_FILE]
 
-        config["hosts"] = [
-            f"{scheme}://{self.config[HOST]}:{self.config[PORT]}"]
+        config["hosts"] = [f"{scheme}://{self.config[HOST]}:{self.config[PORT]}"]
 
         if USERNAME in self.config and PASSWORD in self.config:
-            config["basic_auth"] = (
-                self.config[USERNAME], self.config[PASSWORD])
+            config["basic_auth"] = (self.config[USERNAME], self.config[PASSWORD])
         elif API_KEY in self.config and API_KEY_ID in self.config:
             config["api_key"] = (self.config[API_KEY_ID], self.config[API_KEY])
         elif ENCODED_API_KEY in self.config:
@@ -450,7 +447,6 @@ class ElasticSink(BatchSink):
                     failed_records.append(rec)
             return failed_records
 
-
         for attempt in range(MAX_RETRIES):
             try:
                 # Some documents may be very heavy, eg full Drive documents or diffs
@@ -459,17 +455,21 @@ class ElasticSink(BatchSink):
                 # -- The above caused some dropped records - revert to the previous simple bulk insert
                 bulk(self.client, records_body)
                 # Successful -> exit the loop
-                break  
+                break
             except elasticsearch.helpers.BulkIndexError as e:
                 # VD-7482: this is something we may accept, e.g the document is way too big - just don't crash.
                 err_str = f"{e.errors}"[0:1000]
                 self.logger.error(f"BulkIndexError on attempt {attempt + 1}: {err_str}")
                 failed_records = insert_individual_records(records)
                 if failed_records:
-                    self.logger.error(f"Failed to insert {len(failed_records)} records even in individual mode (bulk error). Ignore error")
+                    self.logger.error(
+                        f"Failed to insert {len(failed_records)} records even in individual mode (bulk error). Ignore error"
+                    )
             except elasticsearch.exceptions.ConnectionTimeout as e:
                 if attempt < MAX_RETRIES - 1:
-                    self.logger.warning(f"ConnectionTimeout on attempt {attempt + 1}. Retrying in {RETRY_DELAY} seconds...")
+                    self.logger.warning(
+                        f"ConnectionTimeout on attempt {attempt + 1}. Retrying in {RETRY_DELAY} seconds..."
+                    )
                     time.sleep(RETRY_DELAY)
                 else:
                     self.logger.error(f"ConnectionTimeout on final attempt {MAX_RETRIES}: {str(e)}")
@@ -477,11 +477,13 @@ class ElasticSink(BatchSink):
             except Exception as e:
                 if attempt < MAX_RETRIES - 1:
                     #  TransportError or elastic_transport.TlsError may happen if the payload is too big
-                    self.logger.error(f"Unexpected error on attempt {attempt + 1}: {str(e)}. Retrying in {RETRY_DELAY} seconds with a smaller payload (switching to individual record insertion)...")
+                    self.logger.error(
+                        f"Unexpected error on attempt {attempt + 1}: {str(e)}. Retrying in {RETRY_DELAY} seconds with a smaller payload (switching to individual record insertion)..."
+                    )
                     time.sleep(RETRY_DELAY)
 
                     failed_records = insert_individual_records(records)
-                    
+
                     if failed_records:
                         self.logger.error(
                             f"Failed to insert {len(failed_records)} records even in individual mode on attempt {attempt + 1}: "
@@ -495,7 +497,7 @@ class ElasticSink(BatchSink):
                         self.logger.error("------")
                         self.logger.error(f"Will retry in {RETRY_DELAY} seconds")
                         time.sleep(RETRY_DELAY)
-                        
+
                         records = failed_records
                         records_body = self.build_body(records)
                         self.logger.debug(records_body)
@@ -537,8 +539,20 @@ class ElasticSink(BatchSink):
 
         # 2. Best effort to avoid duplicates:
         # In descending priority, try to match a field which looks like a primary key
-        id_fields = ["id", "ID", "Id", "gid", "accountId",
-                     "sha", "hash", "node_id", "idx", "key", "ts", "name"]
+        id_fields = [
+            "id",
+            "ID",
+            "Id",
+            "gid",
+            "accountId",
+            "sha",
+            "hash",
+            "node_id",
+            "idx",
+            "key",
+            "ts",
+            "name",
+        ]
         for id_field in id_fields:
             if id_field in r:
                 return r[id_field]
@@ -553,7 +567,7 @@ class ElasticSink(BatchSink):
                 schema=self.schema,
                 treatment=self.datetime_error_treatment,
             )
-        except Exception as e:
+        except Exception:
             # This actually causes more spam than necessary - it may happen if some timestamps are cast as dates, but are loaded as timestamps
             pass
             # self.logger.warning(f"Unexpected record raised an exception during validation: {e}. Record details:")
@@ -569,23 +583,34 @@ class ElasticSink(BatchSink):
         # Realistically, only one diff setting will apply, return a value as soon as
         # we find a match
         for diff_settings in diff_enabled:
-            diff_event, ignore = self.process_diff_event(
-                index, doc_id, r, diff_settings)
+            diff_event, ignore = self.process_diff_event(index, doc_id, r, diff_settings)
             if not ignore:
                 # Default insertion: no need for an update in the case of events
-                self.logger.debug(
-                    f"Append event for stream {index+DIFF_SUFFIX}: {doc_id}")
+                self.logger.debug(f"Append event for stream {index+DIFF_SUFFIX}: {doc_id}")
                 return {
-                    **{"_op_type": "index", "_index": index+DIFF_SUFFIX, "_source": diff_event, "_id": diff_event["id"]},
-                    **build_fields(self.stream_name+DIFF_SUFFIX, metadata_fields, diff_event, self.logger),
+                    **{
+                        "_op_type": "index",
+                        "_index": index + DIFF_SUFFIX,
+                        "_source": diff_event,
+                        "_id": diff_event["id"],
+                    },
+                    **build_fields(
+                        self.stream_name + DIFF_SUFFIX, metadata_fields, diff_event, self.logger
+                    ),
                 }
             # else:
             #     self.logger.info(f"Ignore diff (no change): stream {index+DIFF_SUFFIX}: {diff_event} ")
         return None
 
-    def process_diff_event(self, main_index: str, doc_id: str, new_doc: Dict[str, str | Dict[str, str] | int], diff_config: Dict) -> Tuple[Dict, bool]:
+    def process_diff_event(
+        self,
+        main_index: str,
+        doc_id: str,
+        new_doc: Dict[str, str | Dict[str, str] | int],
+        diff_config: Dict,
+    ) -> Tuple[Dict, bool]:
         # Raise an exception if the field does not exist in the doc
-        if diff_config.get(EVENT_TIME_KEY, '').lower() == "autogenerated":
+        if diff_config.get(EVENT_TIME_KEY, "").lower() == "autogenerated":
             evt_time = datetime.datetime.now().isoformat()
         else:
             evt_time = new_doc.get(diff_config.get(EVENT_TIME_KEY))
@@ -593,9 +618,9 @@ class ElasticSink(BatchSink):
         ignored_fields.extend(diff_config.get(IGNORED_FIELDS, []))
         ignored_fields.extend(DEFAULT_IGNORED_FIELDS)
         specific_diff_process = diff_config.get(SPECIFIC_DIFF_PROCESS, "")
-        specific_diff_process_data_field  = diff_config.get(SPECIFIC_DIFF_PROCESS_DATA_FIELD, "")
-        specific_diff_process_filter_field  = diff_config.get(SPECIFIC_DIFF_PROCESS_FILTER_FIELD, "")
-        specific_diff_process_filter_value  = diff_config.get(SPECIFIC_DIFF_PROCESS_FILTER_VALUE, "")
+        specific_diff_process_data_field = diff_config.get(SPECIFIC_DIFF_PROCESS_DATA_FIELD, "")
+        specific_diff_process_filter_field = diff_config.get(SPECIFIC_DIFF_PROCESS_FILTER_FIELD, "")
+        specific_diff_process_filter_value = diff_config.get(SPECIFIC_DIFF_PROCESS_FILTER_VALUE, "")
 
         diff_event = {}
         diff_event["id"] = f"{doc_id}-event-{evt_time}"
@@ -614,23 +639,27 @@ class ElasticSink(BatchSink):
             diff_event["diff_type"] = diff_result["diff_type"]
             diff_event["from"] = diff_result["from"]
             diff_event["to"] = diff_result["to"]
-            if len(diff_event.get("from", {}).keys()) == 0 and len(diff_event.get("to", {}).keys()) == 0:
+            if (
+                len(diff_event.get("from", {}).keys()) == 0
+                and len(diff_event.get("to", {}).keys()) == 0
+            ):
                 ignore = True
         else:
-            diff_result, ignore = self.specific_diff(original_doc,
-                                                    new_doc,
-                                                    specific_diff_process,
-                                                    specific_diff_process_data_field,
-                                                    specific_diff_process_filter_field,
-                                                    specific_diff_process_filter_value)
+            diff_result, ignore = self.specific_diff(
+                original_doc,
+                new_doc,
+                specific_diff_process,
+                specific_diff_process_data_field,
+                specific_diff_process_filter_field,
+                specific_diff_process_filter_value,
+            )
             diff_event["changes"] = diff_result
-        
+
         # Also include the full docs, to make future queries easier (it's slow if we need to access the original doc for context each time)
         # However, only include the resulting doc because otherwise the diff doc would be too heavy!
         # diff_event["original_doc"] = original_doc
         diff_event["new_doc"] = new_doc
-        diff_event = {k: v for k, v in diff_event.items() if v !=
-                      None and v != ""}
+        diff_event = {k: v for k, v in diff_event.items() if v is not None and v != ""}
 
         return diff_event, ignore
 
@@ -645,29 +674,42 @@ class ElasticSink(BatchSink):
         except Exception as e:
             # Should not happen -> raise
             self.logger.error(
-                f"Error while fetching document {doc_id} from {index} in order to build diff: {e}")
+                f"Error while fetching document {doc_id} from {index} in order to build diff: {e}"
+            )
             raise e
         return original_doc
 
-    def specific_diff(self, old, new, specific_diff_process, specific_diff_process_data_field, specific_diff_process_filter_field, specific_diff_process_filter_value) -> Tuple[Dict[str, Any], bool]:
+    def specific_diff(
+        self,
+        old,
+        new,
+        specific_diff_process,
+        specific_diff_process_data_field,
+        specific_diff_process_filter_field,
+        specific_diff_process_filter_value,
+    ) -> Tuple[Dict[str, Any], bool]:
         diff = {}
         old_data = pydash.get(old, specific_diff_process_data_field, "")
         new_data = pydash.get(new, specific_diff_process_data_field, "")
-        if pydash.get(new, specific_diff_process_filter_field, "") != specific_diff_process_filter_value:
+        if (
+            pydash.get(new, specific_diff_process_filter_field, "")
+            != specific_diff_process_filter_value
+        ):
             return diff, True
 
         ignore = False
         if specific_diff_process == SPECIFIC_DIFF_PROCESS_CSV:
-            diff, ignore = spreadsheet_diff(old_data,new_data)
+            diff, ignore = spreadsheet_diff(old_data, new_data)
         elif specific_diff_process == SPECIFIC_DIFF_PROCESS_TEXT:
-            diff, ignore = text_diff(old_data,new_data)
+            diff, ignore = text_diff(old_data, new_data)
         elif specific_diff_process == SPECIFIC_DIFF_PROCESS_TEXT_LINE:
-            diff, ignore = text_diff_line(old_data,new_data)
+            diff, ignore = text_diff_line(old_data, new_data)
         elif specific_diff_process == SPECIFIC_DIFF_PROCESS_FLAT:
-            diff, ignore = flat_diff(old_data,new_data)
+            diff, ignore = flat_diff(old_data, new_data)
         else:
             self.logger.error(f"Unsupported specific diff: {specific_diff_process}")
         return diff, ignore
+
 
 def dict_diff(old, new, ignored_fields):
     diff = {"from": {}, "to": {}, "diff_type": SPECIFIC_DIFF_PROCESS_DICT}
@@ -694,6 +736,7 @@ def dict_diff(old, new, ignored_fields):
 
     return diff
 
+
 def spreadsheet_diff(csv_string1, csv_string2):
     def safe_read_csv(csv_string):
         if not csv_string.strip():
@@ -708,13 +751,15 @@ def spreadsheet_diff(csv_string1, csv_string2):
                 dtype=str,
                 keep_default_na=False,
                 quotechar='"',
-                escapechar='\\',
+                escapechar="\\",
                 names=range(max_columns),
                 header=None,
-                on_bad_lines='warn'
+                on_bad_lines="warn",
             )
         except Exception as e:
-            logging.warning(f"Invalid CSV string input, pandas exception: {e}. Consider a null document")
+            logging.warning(
+                f"Invalid CSV string input, pandas exception: {e}. Consider a null document"
+            )
             return pd.DataFrame()
 
     df1 = safe_read_csv(csv_string1)
@@ -722,36 +767,38 @@ def spreadsheet_diff(csv_string1, csv_string2):
 
     # Ensure both DataFrames have the same number of columns
     max_cols = max(df1.shape[1], df2.shape[1]) if not df1.empty or not df2.empty else 0
-    df1 = df1.reindex(columns=range(max_cols), fill_value='')
-    df2 = df2.reindex(columns=range(max_cols), fill_value='')
-    
+    df1 = df1.reindex(columns=range(max_cols), fill_value="")
+    df2 = df2.reindex(columns=range(max_cols), fill_value="")
+
     changes = []
-    
+
     def is_significant_change(val1, val2):
         # Consider change significant if the values are different
         # and neither is an empty string or NaN-like value
         return (val1 != val2) and not (
-            (pd.isna(val1) or val1 == '') and (pd.isna(val2) or val2 == '')
+            (pd.isna(val1) or val1 == "") and (pd.isna(val2) or val2 == "")
         )
 
     # Compare each cell
     for i in range(max(df1.shape[0], df2.shape[0])):
         for j in range(max_cols):
-            val1 = df1.iloc[i, j] if i < df1.shape[0] and j < df1.shape[1] else ''
-            val2 = df2.iloc[i, j] if i < df2.shape[0] and j < df2.shape[1] else ''
-            
+            val1 = df1.iloc[i, j] if i < df1.shape[0] and j < df1.shape[1] else ""
+            val2 = df2.iloc[i, j] if i < df2.shape[0] and j < df2.shape[1] else ""
+
             if is_significant_change(val1, val2):
-                changes.append({
-                    'row': i + 1,  # +1 for human-readable row numbers
-                    'column': j + 1,  # +1 for human-readable column numbers
-                    'old_value': val1,
-                    'new_value': val2,
-                })
-    
+                changes.append(
+                    {
+                        "row": i + 1,  # +1 for human-readable row numbers
+                        "column": j + 1,  # +1 for human-readable column numbers
+                        "old_value": val1,
+                        "new_value": val2,
+                    }
+                )
+
     # Analyze structural changes
     rows_added = df2.shape[0] - df1.shape[0]
     cols_added = df2.shape[1] - df1.shape[1]
-    
+
     # Detect moved content
     # def find_moved_content(source_df, target_df):
     #     moved = []
@@ -767,7 +814,7 @@ def spreadsheet_diff(csv_string1, csv_string2):
     #     return moved
     # Moved content processing doesn't work very well for now - TODO: improve this
     # moved_content = find_moved_content(df1, df2) if not df1.empty and not df2.empty else []
-    
+
     ignore_change = len(changes) == 0 and rows_added == 0 and cols_added == 0
 
     return {
@@ -781,10 +828,9 @@ def spreadsheet_diff(csv_string1, csv_string2):
     }, ignore_change
 
 
-
 def text_diff(text1, text2):
     # Instead of doing a basic diff, doing a diff after word split allows us to better identify
-    # changes. For example, "Hello?" -> "Goodbye" might be interpreted as a series of remove+add 
+    # changes. For example, "Hello?" -> "Goodbye" might be interpreted as a series of remove+add
     # instead of one single replace.
     def split_into_words(text):
         return re.findall(r"\S+|\s+", text)
@@ -818,7 +864,9 @@ def text_diff(text1, text2):
                     line_diff = []
                     for word_tag, wi1, wi2, wj1, wj2 in word_matcher.get_opcodes():
                         if word_tag == "equal":
-                            line_diff.append({"type": "unchanged", "text": "".join(words1[wi1:wi2])})
+                            line_diff.append(
+                                {"type": "unchanged", "text": "".join(words1[wi1:wi2])}
+                            )
                         elif word_tag == "delete":
                             line_diff.append({"type": "removed", "text": "".join(words1[wi1:wi2])})
                         elif word_tag == "insert":
@@ -826,7 +874,7 @@ def text_diff(text1, text2):
                         elif word_tag == "replace":
                             line_diff.append({"type": "removed", "text": "".join(words1[wi1:wi2])})
                             line_diff.append({"type": "added", "text": "".join(words2[wj1:wj2])})
-                    result.append({"line_number": line_number2,  "diff": line_diff, "result": line2})
+                    result.append({"line_number": line_number2, "diff": line_diff, "result": line2})
                     if line1:
                         line_number1 += 1
                     if line2:
@@ -835,6 +883,7 @@ def text_diff(text1, text2):
     ignore_change = len(result) == 0
     ret = {"changes": result, "diff_type": SPECIFIC_DIFF_PROCESS_TEXT}
     return ret, ignore_change
+
 
 def text_diff_line(text1, text2):
     lines1 = text1.splitlines()
@@ -873,6 +922,7 @@ def text_diff_line(text1, text2):
     ret = {"changes": result, "diff_type": SPECIFIC_DIFF_PROCESS_TEXT_LINE}
     return ret, ignore_change
 
+
 def flat_diff(text1, text2):
     # Just in case, try a line diff to see if this change should be ignored
     _, ignore = text_diff_line(text1, text2)
@@ -882,5 +932,5 @@ def flat_diff(text1, text2):
         "from": text1,
         # No need to include the "to" here: it's already available in the new_doc field
         # "to": text2,
-        "diff_type": SPECIFIC_DIFF_PROCESS_FLAT
+        "diff_type": SPECIFIC_DIFF_PROCESS_FLAT,
     }, ignore
